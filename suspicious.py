@@ -1,0 +1,226 @@
+import os
+import time
+import json
+import hashlib
+import logging
+import tempfile
+import shutil
+from pathlib import Path
+from datetime import datetime
+import random
+import string
+import zipfile
+import subprocess
+import sys
+import base64
+
+
+
+# -----------------------------------------------------------------------------
+# Task Creation and Deletion
+# -----------------------------------------------------------------------------
+
+def create_scheduled_task(task_name="MioTaskPython", execution_script=None):
+    if execution_script is None:
+        execution_script = os.path.abspath(__file__)
+    
+    python_exe = sys.executable
+    
+    command = [
+        "schtasks", "/create",
+        "/tn", task_name,
+        "/tr", f'"{python_exe}" "{execution_script}"', 
+        "/sc", "onlogon",
+        "/delay", "0000:10",
+        "/f"
+    ]
+    
+    try:
+        result = subprocess.run(
+            command, 
+            capture_output=True, 
+            text=True, 
+            check=True
+        )
+        #TODO integrare log
+        logging.info(f"Task '{task_name}' successfully created")
+        return True
+    except subprocess.CalledProcessError as e:
+        #TODO integrare log
+        logging.info(f"Error creating task: {e.stderr}")
+        return False
+
+
+def delete_task(task_name="MyTask"):
+    try:
+        subprocess.run(
+            ["schtasks", "/delete", "/tn", task_name, "/f"],
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        logging.info(f" Task'{task_name}' deleted.")
+    except subprocess.CalledProcessError as e:
+        logging.info(f"Error: {e.stderr}")
+
+   
+
+# -----------------------------------------------------------------------------
+# Logging setup
+# -----------------------------------------------------------------------------
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s",
+    handlers=[
+        logging.FileHandler("benign_noise.log"),
+        logging.StreamHandler()
+    ]
+)
+
+logging.info("Starting benign noise generator (sandbox-friendly edition)")
+
+# -----------------------------------------------------------------------------
+# Temp workspace
+# -----------------------------------------------------------------------------
+
+base_dir = Path(tempfile.mkdtemp(prefix="benign_noise_"))
+logging.info(f"Working directory: {base_dir}")
+
+# -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
+
+def random_text(size=512):
+    return ''.join(random.choices(string.ascii_letters + string.digits + " \n", k=size))
+
+
+def sha256(path: Path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+# -----------------------------------------------------------------------------
+# File churn (safe zone only)
+# -----------------------------------------------------------------------------
+
+files = []
+
+for i in range(10):
+    file_path = base_dir / f"file_{i}.txt"
+    content = random_text(1024)
+    file_path.write_text(content)
+    files.append(file_path)
+    logging.info(f"Created {file_path.name}")
+
+# -----------------------------------------------------------------------------
+# Multiple modifications (benign churn)
+# -----------------------------------------------------------------------------
+
+for round_id in range(5):
+    logging.info(f"Modification round {round_id}")
+
+    for file_path in files:
+        old = file_path.read_text()
+        extra = random_text(256)
+        file_path.write_text(old + "\n" + extra)
+
+    time.sleep(0.5)
+
+# -----------------------------------------------------------------------------
+# Hash computation (forces read workload)
+# -----------------------------------------------------------------------------
+
+hash_report = {}
+
+for file_path in files:
+    hash_report[file_path.name] = sha256(file_path)
+    logging.info(f"Hashed {file_path.name}")
+
+# Save report
+report_file = base_dir / "hash_report.json"
+report_file.write_text(json.dumps(hash_report, indent=4))
+
+# -----------------------------------------------------------------------------
+# Compression step (common sandbox trigger behavior)
+# -----------------------------------------------------------------------------
+
+zip_path = base_dir / "archive.zip"
+
+with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+    for file_path in files:
+        z.write(file_path, arcname=file_path.name)
+
+logging.info("Created archive.zip")
+
+# -----------------------------------------------------------------------------
+# Simulated CPU noise (lightweight)
+# -----------------------------------------------------------------------------
+
+logging.info("Starting CPU noise phase")
+
+start = time.time()
+while time.time() - start < 3:
+    _ = sum(i * i for i in range(1000))
+
+logging.info("CPU noise completed")
+
+# -----------------------------------------------------------------------------
+# Directory listing
+# -----------------------------------------------------------------------------
+
+logging.info("Final directory state:")
+for item in base_dir.iterdir():
+    logging.info(f" - {item.name}")
+
+# ----------------------------------------------------------------------------- 
+# Scheduling task
+# -----------------------------------------------------------------------------
+    
+
+create_scheduled_task(
+        task_name="MioTaskPython",
+        execution_script= os.path.abspath(__file__)
+    )
+
+delete_task("MioTaskPython")
+
+# ----------------------------------------------------------------------------- 
+# import payload from base64 to zip
+# -----------------------------------------------------------------------------
+
+base64_string = """
+WDVPIVAlQEFQWzRcUFpYNTQoUF4pN0NDKTd9LVNUQU5EQVJELUFOVElWSVJVUy1URVNULUZJTEUhK0gq
+""".strip()
+
+output_file = "output.txt"
+
+try:
+    with open(output_file, "wb") as f:
+        f.write(base64.b64decode(base64_string))
+
+    logging.info(f"[+] File successfully created: {output_file}")
+
+except Exception as e:
+    logging.info(f"[-] Error during decode: {e}")
+    
+
+zip_name = "archive.zip"
+
+file = "output.txt"
+
+with zipfile.ZipFile(zip_name, "w", zipfile.ZIP_DEFLATED) as zipf:
+    zipf.write(file)
+
+logging.info(f"[+] ZIP Created: {zip_name}")
+
+# -----------------------------------------------------------------------------
+# Cleanup
+# -----------------------------------------------------------------------------
+
+shutil.rmtree(base_dir)
+logging.info("Workspace cleaned up")
+
+logging.info("Finished benign noise run")
