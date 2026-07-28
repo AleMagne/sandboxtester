@@ -1,6 +1,10 @@
 """
 mitre_eicar_sandbox_test.py
 
+
+
+
+
 Safe MITRE ATT&CK-oriented sandbox validation using the EICAR anti-malware test string.
 
 MITRE mapping:
